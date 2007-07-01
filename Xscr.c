@@ -12,11 +12,9 @@
 typedef enum {
 	DEPTH_15bpp = 15,
 	DEPTH_16bpp = 16,
-	DEPTH_32bpp = 32,
+	DEPTH_32bpp = 24,
 	DEPTH_gray  = 8
 } BitsPerPixel;
-
-typedef Bool bool;
 
 typedef enum {Pressed, Released} State;
 
@@ -41,11 +39,12 @@ typedef void (*Xscr_buttons_callback)(
 	unsigned int kb_mask
 );
 
-static bool quit   = false;
-static bool redraw = true;
+static Bool quit   = False;
+static char redraw = True;
 
-void Xscr_quit()   {quit = true;}
-void Xscr_redraw() {redraw = true;}
+void Xscr_quit()       {quit = True;}
+void Xscr_redraw()     {redraw = 1;}
+void Xscr_redraw_now() {redraw = 2;}
 
 char* Xscr_errormsg[] = {
 	/* 0 */ "no error",
@@ -53,7 +52,7 @@ char* Xscr_errormsg[] = {
 	/* 2 */ "screen depth is different then required depth",
 	/* 3 */ "unsupported screen depth conversions",
 	/* 4 */ "not enought memory for backbuffer",
-	/* 5 */ "",
+	/* 5 */ "can't create Ximage",
 	/* 6 */ "",
 	/* 7 */ "",
 	/* 8 */ "",
@@ -71,6 +70,7 @@ void Xscr_convert_gray_16bpp(void*, void*, unsigned int, unsigned int);
 void Xscr_convert_gray_15bpp(void*, void*, unsigned int, unsigned int);
 void Xscr_convert_16bpp_32bpp(void*, void*, unsigned int, unsigned int);
 void Xscr_convert_15bpp_32bpp(void*, void*, unsigned int, unsigned int);
+void Xscr_convert_32bpp_16bpp(void*, void*, unsigned int, unsigned int);
 
 
 int Xscr_mainloop(
@@ -78,7 +78,7 @@ int Xscr_mainloop(
 	unsigned int height,
 	BitsPerPixel screen_depth,
 	uint8_t* screen_data,
-	bool require_exact_depth,
+	Bool require_exact_depth,
 
 	Xscr_keyboard_callback	keyboard_callback,
 	Xscr_motion_callback	motion_callback,
@@ -100,9 +100,8 @@ int Xscr_mainloop(
 	XSizeHints size_hints;
 	XWMHints   WM_hints;
 	void	   (*conv_func)(void*, void*, unsigned int, unsigned int) = NULL;
-	XKeyboardControl xkc;
 
-
+	
 	// open display
 	display = XOpenDisplay(NULL);
 	if (!display) return -1;
@@ -140,6 +139,13 @@ int Xscr_mainloop(
 				}
 				break;
 
+			case 24:
+				switch (depth) {
+					case 16: conv_func = Xscr_convert_32bpp_16bpp; break;
+					default: return -3;
+				}
+				break;
+
 			default:
 				return -3;
 		}
@@ -161,12 +167,17 @@ int Xscr_mainloop(
 		if (real_screen_data == NULL) return -4;
 		image = XCreateImage(display, DefaultVisual(display, screen),
 			depth, ZPixmap, 0, (char*)real_screen_data,
-			width, height, 16, 0);
+			width, height, 8, 0);
+	
+		Xscr_prepare_lookups();
 	}
-	else
+	else {
 		image = XCreateImage(display, DefaultVisual(display, screen),
 			depth, ZPixmap, 0, (char*)screen_data,
-			width, height, 16, 0);
+			width, height, 8, 0);
+		if (image == NULL)
+			return -5;
+		}
 
 	// create window
 	window = XCreateSimpleWindow( // make a simple window
@@ -203,9 +214,6 @@ int Xscr_mainloop(
 	XSetBackground(display, defaultGC, WhitePixel(display, screen) );
 
 
-	//xkc.auto_repeat_mode = AutoRepeatModeOn;
-	//XChangeKeyboardControl(display, KBAutoRepeatMode, &xkc);
-
 	
 	// start reading messages
 	long event_mask = ExposureMask;
@@ -224,23 +232,23 @@ int Xscr_mainloop(
 	XSelectInput(display, window, event_mask);
 
 	quit   = false;
-	redraw = true;
+	redraw = 1;
 
-	Xscr_prepare_lookups();
 	while (!quit) {
 		if (redraw) {
 			if (conv_func)
 				(*conv_func)((void*)screen_data, (void*)real_screen_data, width, height);
+			
 			XPutImage(display, window, defaultGC, image, 0, 0, 0, 0, width, height);
-			XFlush(display);
+			
+			if (redraw == 2)
+				XFlush(display);
+			
 			redraw = 0;
 		}
 
 		XNextEvent(display, &event);
 		switch (event.type) {
-			case DestroyNotify:
-				XBell(display, 30);
-				break;
 			case Expose:
 				XPutImage(display, window, defaultGC, image,
 				          event.xexpose.x, event.xexpose.y,
@@ -414,18 +422,18 @@ void Xscr_convert_16bpp_32bpp(
 	unsigned int width,
 	unsigned int height
 ) {
-	int x, y;
+	int n;
 	uint16_t *src;
 	uint32_t *dst;
 
 	src = pix16bpp;
 	dst = true_color;
-	for (y=0; y < height; y++)
-		for (x=0; x < width; x++) {
-			*dst++ = __conv_16bpp_32bpp_lo[*src & 0x00ff] |
-			         __conv_16bpp_32bpp_hi[*src >> 8];
-			src++;
-		}
+	n   = width * height;
+	while (n-- >= 0) {
+		*dst++ = __conv_16bpp_32bpp_lo[*src & 0x00ff] |
+				 __conv_16bpp_32bpp_hi[*src >> 8];
+		src++;
+	}
 }
 
 
@@ -450,11 +458,37 @@ void Xscr_convert_15bpp_32bpp(
 }
 
 
+void Xscr_convert_32bpp_16bpp(
+	void *pix32bpp,
+	void *pix16bpp,
+	unsigned int width,
+	unsigned int height
+) {
+	int x, y;
+	uint8_t *src;
+	uint16_t  R, G, B;
+	uint16_t *dst;
+
+	src = pix32bpp;
+	dst = pix16bpp;
+	for (y=0; y < height; y++)
+		for (x=0; x < width; x++) {
+			B = *src++ >> 3;
+			G = *src++ >> 2;
+			R = *src++ >> 3;
+			src++;
+
+			*dst++ = (R << 11) | (G << 5) | B;
+		}
+}
+
+
 ////////////////////////////////////////////////////////////////////////
 
 //#define TEST_XSCR
 #ifdef TEST_XSCR
 #include <stdio.h>
+#include "load_ppm.c"
 
 void motion(int x, int y, Time t, unsigned int kb_mask) {
 	printf("mouse position: %d, %d\n", x, y);
@@ -471,33 +505,22 @@ void keyboard(int x, int y, Time t, KeySym c, State s, unsigned int state) {
 }
 
 int main() {
-	uint8_t *data, *pix8;
-	//uint16_t *pix, R, G, B;
-	uint8_t row[640*3];
-	int x, y, result;
+	uint8_t *data;
+	int width, height, maxval, result;
 	FILE* file;
 
 	file = fopen("a.ppm", "rb");
 	if (!file) return 1;
-	data = pix8 = (uint8_t*)malloc(640*480);
-	//pix  = (uint16_t*)data;
-
-	fseek(file, -640*480*3, SEEK_END);
-	for (y=0; y < 480; y++) {
-		fread(row, 640, 3, file);
-		for (x=0; x < 640*3; x += 3) {
-			/*R = row[x+0] >> 3;
-			G = row[x+1] >> 2;
-			B = row[x+2] >> 3;
-			*pix++ = (R << 11) | (G << 5) | B;
-			*/
-			*pix8++ = (uint8_t)(((uint16_t)row[x] + (uint16_t)row[x+1] + (uint16_t)row[x+2])/3);
-		}
-	}
+	result = ppm_load_32bpp(file, &width, &height, &maxval, &data, 0);
+	printf("PPM: %dx%d, %dbpp\n", width, height, maxval < 256 ? 3*8 : 3*16);
 	fclose(file);
+	if (result < 0) {
+		printf("PPM load error: %s\n", PPM_errormsg[-result]);
+		return 1;
+	}
 
 	result = Xscr_mainloop(
-		640, 480, DEPTH_gray, data, false, 
+		640, 480, DEPTH_32bpp, data, False, 
 		keyboard, motion, buttons,
 		"Xscr demo"
 	);
