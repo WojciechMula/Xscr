@@ -1,12 +1,20 @@
 #include <X11/X.h>
 #include <X11/Xlib.h>
+#include <X11/Xutil.h>
 #include <X11/keysym.h>
+
+#include <stdlib.h>
 #include <stdint.h>
 
 #define true	1
 #define false	(!True)
 
-typedef enum {DEPTH_15bpp=15, DEPTH_16bpp=16, DEPTH_32bpp=32, DEPTH_gray=8} BitsPerPixel;
+typedef enum {
+	DEPTH_15bpp = 15,
+	DEPTH_16bpp = 16,
+	DEPTH_32bpp = 32,
+	DEPTH_gray  = 8
+} BitsPerPixel;
 
 typedef Bool bool;
 
@@ -42,9 +50,9 @@ void Xscr_redraw() {redraw = true;}
 char* Xscr_errormsg[] = {
 	/* 0 */ "no error",
 	/* 1 */ "cant't open display (is $DISPLAY set?)",
-	/* 2 */ "",
-	/* 3 */ "",
-	/* 4 */ "",
+	/* 2 */ "screen depth is different then required depth",
+	/* 3 */ "unsupported screen depth conversions",
+	/* 4 */ "not enought memory for backbuffer",
 	/* 5 */ "",
 	/* 6 */ "",
 	/* 7 */ "",
@@ -55,6 +63,14 @@ char* Xscr_errormsg[] = {
 	/* 12 */ "",
 	/* 13 */ ""
 };
+
+void Xscr_prepare_lookups();
+
+void Xscr_convert_gray_32bpp(void*, void*, unsigned int, unsigned int);
+void Xscr_convert_gray_16bpp(void*, void*, unsigned int, unsigned int);
+void Xscr_convert_gray_15bpp(void*, void*, unsigned int, unsigned int);
+void Xscr_convert_16bpp_32bpp(void*, void*, unsigned int, unsigned int);
+void Xscr_convert_15bpp_32bpp(void*, void*, unsigned int, unsigned int);
 
 
 int Xscr_mainloop(
@@ -80,14 +96,77 @@ int Xscr_mainloop(
 	// priv variables
 	uint8_t* real_screen_data = NULL;
 	XImage*  image;
+	int      depth;
+	XSizeHints size_hints;
+	XWMHints   WM_hints;
+	void	   (*conv_func)(void*, void*, unsigned int, unsigned int) = NULL;
+	XKeyboardControl xkc;
 
-	
+
 	// open display
 	display = XOpenDisplay(NULL);
 	if (!display) return -1;
 
 	// get screen
 	screen = DefaultScreen(display);
+	depth  = DefaultDepth(display, screen);
+
+	if (depth != (int)screen_depth) {
+		if (require_exact_depth)
+			return -2;
+
+		// select conversion function
+		switch ((int)screen_depth) {
+			case 8:
+				switch (depth) {
+					case 24: conv_func = Xscr_convert_gray_32bpp; break;
+					case 16: conv_func = Xscr_convert_gray_16bpp; break;
+					case 15: conv_func = Xscr_convert_gray_15bpp; break;
+					default: return -3;
+				}
+				break;
+
+			case 16:
+				switch (depth) {
+					case 24: conv_func = Xscr_convert_16bpp_32bpp; break;
+					default: return -3;
+				}
+				break;
+
+			case 15:
+				switch (depth) {
+					case 24: conv_func = Xscr_convert_15bpp_32bpp; break;
+					default: return -3;
+				}
+				break;
+
+			default:
+				return -3;
+		}
+
+		// allocate mem for backbuffer
+		switch (depth) {
+			case 24:
+				real_screen_data = malloc(width * height * 4);
+				break;
+			case 15:
+			case 16:
+				real_screen_data = malloc(width * height * 2);
+				break;
+			case 8:
+				real_screen_data = malloc(width * height);
+				break;
+		}
+
+		if (real_screen_data == NULL) return -4;
+		image = XCreateImage(display, DefaultVisual(display, screen),
+			depth, ZPixmap, 0, (char*)real_screen_data,
+			width, height, 16, 0);
+	}
+	else
+		image = XCreateImage(display, DefaultVisual(display, screen),
+			depth, ZPixmap, 0, (char*)screen_data,
+			width, height, 16, 0);
 
 	// create window
 	window = XCreateSimpleWindow( // make a simple window
@@ -105,26 +184,38 @@ int Xscr_mainloop(
 	else
 		XStoreName(display, window, "Xscr application");
 
-	XMapWindow(display, window); // show window it on the screen
+	WM_hints.flags = InputHint | StateHint;
+	WM_hints.input = True;
+	WM_hints.initial_state = NormalState;
+	XSetWMHints(display, window, &WM_hints);
+
+	size_hints.flags = PMinSize | PMaxSize | PSize;
+	size_hints.width = size_hints.min_width = size_hints.max_width = width;
+	size_hints.height = size_hints.min_height = size_hints.max_height = height;
+	XSetWMNormalHints(display, window, &size_hints);
+
+	
+	XMapWindow(display, window); // show window on the screen
 
 	// setup graphics context
 	defaultGC = XCreateGC(display, window, 0, NULL);
 	XSetForeground(display, defaultGC, BlackPixel(display, screen) );
 	XSetBackground(display, defaultGC, WhitePixel(display, screen) );
-		
-	image = XCreateImage(display, DefaultVisual(display, screen),
-		16, ZPixmap, 0, (char*)screen_data,
-		width, height, 16, 0);
+
+
+	//xkc.auto_repeat_mode = AutoRepeatModeOn;
+	//XChangeKeyboardControl(display, KBAutoRepeatMode, &xkc);
+
 	
 	// start reading messages
 	long event_mask = ExposureMask;
 
+	if (motion_callback) 
+		event_mask |= PointerMotionMask;
 	if (keyboard_callback) {
 		event_mask |= KeyPressMask;
 		event_mask |= KeyReleaseMask;
 	}
-	if (motion_callback) 
-		event_mask |= PointerMotionMask;
 	if (buttons_callback) {
 		event_mask |= ButtonPressMask;
 		event_mask |= ButtonReleaseMask;
@@ -133,9 +224,13 @@ int Xscr_mainloop(
 	XSelectInput(display, window, event_mask);
 
 	quit   = false;
-	redraw = false;
+	redraw = true;
+
+	Xscr_prepare_lookups();
 	while (!quit) {
 		if (redraw) {
+			if (conv_func)
+				(*conv_func)((void*)screen_data, (void*)real_screen_data, width, height);
 			XPutImage(display, window, defaultGC, image, 0, 0, 0, 0, width, height);
 			XFlush(display);
 			redraw = 0;
@@ -143,6 +238,9 @@ int Xscr_mainloop(
 
 		XNextEvent(display, &event);
 		switch (event.type) {
+			case DestroyNotify:
+				XBell(display, 30);
+				break;
 			case Expose:
 				XPutImage(display, window, defaultGC, image,
 				          event.xexpose.x, event.xexpose.y,
@@ -202,58 +300,213 @@ int Xscr_mainloop(
 				break;
 		}
 	}
+
 	XCloseDisplay(display);
+
+	if (real_screen_data != NULL) {
+		free(real_screen_data);
+	}
 	return 0;
 }
 
 
+uint32_t __conv_gray_32bpp[256];
+uint16_t __conv_gray_15bpp[256];
+uint16_t __conv_gray_16bpp[256];
+uint32_t __conv_15bpp_32bpp_lo[256];
+uint32_t __conv_15bpp_32bpp_hi[256];
+uint32_t __conv_16bpp_32bpp_lo[256];
+uint32_t __conv_16bpp_32bpp_hi[256];
 
-#define TEST_XSCR
+void Xscr_prepare_lookups() {
+	uint32_t i, i5, i6;
+
+	for (i=0; i < 256; i++) {
+		i5 = i >> 3;
+		i6 = i >> 2;
+
+		// gray -> direct color
+		__conv_gray_32bpp[i] =  (i << 16) |  (i << 8) | i;
+		__conv_gray_16bpp[i] = (i5 << 11) | (i6 << 5) | i5;
+		__conv_gray_15bpp[i] = (i5 << 10) | (i5 << 5) | i5;
+
+
+		// 16bpp -> 32bpp
+		// |rrrrrggg gggbbbbb|
+		
+		// |00000000 00000000 000ggg00 bbbbb000|
+		__conv_16bpp_32bpp_lo[i] = ((i & 0xe0) << 5) | ((i & 0x1f) << 3);
+		
+		// |00000000 rrrrr000 ggg00000 00000000|
+		__conv_16bpp_32bpp_hi[i] = ((i & 0x07) << 13) | ((i & 0xf8) << 16);
+		
+		
+		// 15bpp -> 32bpp
+		// |0rrrrrgg gggbbbbb|
+		//
+		// |00000000 rrrrr000 ggggg000 bbbbb000|
+		
+		// |00000000 00000000 000gg000 bbbbb000|
+		__conv_15bpp_32bpp_lo[i] = ((i & 0xe0) << 5) | ((i & 0x1f) << 3);
+		
+		// |00000000 rrrrr000 ggg00000 00000000|
+		__conv_15bpp_32bpp_hi[i] = ((i & 0x07) << 13) | ((i & 0x78) << 17);
+	}
+}
+
+void Xscr_convert_gray_32bpp(
+	void *gray,
+	void *true_color,
+	unsigned int width,
+	unsigned int height
+) {
+	int x, y;
+	uint8_t  *src;
+	uint32_t *dst;
+
+	src = gray;
+	dst = true_color;
+	for (y=0; y < height; y++)
+		for (x=0; x < width; x++)
+			*dst++ = __conv_gray_32bpp[*src++];
+}
+
+
+void Xscr_convert_gray_16bpp(
+	void *gray,
+	void *true_color,
+	unsigned int width,
+	unsigned int height
+) {
+	int x, y;
+	uint8_t  *src;
+	uint16_t *dst;
+
+	src = gray;
+	dst = true_color;
+	for (y=0; y < height; y++)
+		for (x=0; x < width; x++)
+			*dst++ = __conv_gray_16bpp[*src++];
+}
+
+
+void Xscr_convert_gray_15bpp(
+	void *gray,
+	void *true_color,
+	unsigned int width,
+	unsigned int height
+) {
+	int x, y;
+	uint8_t  *src;
+	uint16_t *dst;
+
+	src = gray;
+	dst = true_color;
+	for (y=0; y < height; y++)
+		for (x=0; x < width; x++)
+			*dst++ = __conv_gray_15bpp[*src++];
+}
+
+
+void Xscr_convert_16bpp_32bpp(
+	void *pix16bpp,
+	void *true_color,
+	unsigned int width,
+	unsigned int height
+) {
+	int x, y;
+	uint16_t *src;
+	uint32_t *dst;
+
+	src = pix16bpp;
+	dst = true_color;
+	for (y=0; y < height; y++)
+		for (x=0; x < width; x++) {
+			*dst++ = __conv_16bpp_32bpp_lo[*src & 0x00ff] |
+			         __conv_16bpp_32bpp_hi[*src >> 8];
+			src++;
+		}
+}
+
+
+void Xscr_convert_15bpp_32bpp(
+	void *pix15bpp,
+	void *true_color,
+	unsigned int width,
+	unsigned int height
+) {
+	int x, y;
+	uint16_t  *src;
+	uint32_t *dst;
+
+	src = pix15bpp;
+	dst = true_color;
+	for (y=0; y < height; y++)
+		for (x=0; x < width; x++) {
+			*dst++ = __conv_15bpp_32bpp_lo[*src & 0x00ff] |
+			         __conv_15bpp_32bpp_hi[*src >> 8];
+			src++;
+		}
+}
+
+
+////////////////////////////////////////////////////////////////////////
+
+//#define TEST_XSCR
 #ifdef TEST_XSCR
 #include <stdio.h>
 
-void motion(int x, int y) {
+void motion(int x, int y, Time t, unsigned int kb_mask) {
 	printf("mouse position: %d, %d\n", x, y);
 }
 
-void buttons(int x, int y, unsigned int button, State s) {
+void buttons(int x, int y, Time t, unsigned int button, State s, unsigned int kb_mask) {
 	printf("state=%s, button=%d\n", s==Pressed ? "Pressed" : "Released", button);
 }
 
-void keyboard(int x, int y, KeySym c, State s) {
+void keyboard(int x, int y, Time t, KeySym c, State s, unsigned int state) {
 	printf("state=%s, key=%s\n", s==Pressed ? "Pressed" : "Released", XKeysymToString(c));
+	if (c == XK_q)
+		Xscr_quit();
 }
 
 int main() {
-	uint8_t *data;
-	uint16_t *pix, R, G, B;
+	uint8_t *data, *pix8;
+	//uint16_t *pix, R, G, B;
 	uint8_t row[640*3];
-	int x, y;
+	int x, y, result;
 	FILE* file;
 
 	file = fopen("a.ppm", "rb");
 	if (!file) return 1;
-	data = pix = malloc(640*480*2);
+	data = pix8 = (uint8_t*)malloc(640*480);
+	//pix  = (uint16_t*)data;
 
 	fseek(file, -640*480*3, SEEK_END);
 	for (y=0; y < 480; y++) {
 		fread(row, 640, 3, file);
 		for (x=0; x < 640*3; x += 3) {
-			R = row[x+0] >> 3;
+			/*R = row[x+0] >> 3;
 			G = row[x+1] >> 2;
 			B = row[x+2] >> 3;
 			*pix++ = (R << 11) | (G << 5) | B;
+			*/
+			*pix8++ = (uint8_t)(((uint16_t)row[x] + (uint16_t)row[x+1] + (uint16_t)row[x+2])/3);
 		}
 	}
 	fclose(file);
 
-	Xscr_mainloop(
-		640, 480, DEPTH_32bpp, data, false, 
-		//NULL, motion, buttons
-		NULL, NULL, NULL,
+	result = Xscr_mainloop(
+		640, 480, DEPTH_gray, data, false, 
+		keyboard, motion, buttons,
 		"Xscr demo"
 	);
+	if (result < 0) {
+		printf("Xscr error: %s\n", Xscr_errormsg[-result]);
+	}
+
 	free(data);
+	return 0;
 }
 #endif
 
