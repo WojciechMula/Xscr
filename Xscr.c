@@ -213,7 +213,6 @@ int Xscr_mainloop(
 	XSetForeground(display, defaultGC, BlackPixel(display, screen) );
 	XSetBackground(display, defaultGC, WhitePixel(display, screen) );
 
-
 	
 	// start reading messages
 	long event_mask = ExposureMask;
@@ -471,15 +470,56 @@ void Xscr_convert_32bpp_16bpp(
 
 	src = pix32bpp;
 	dst = pix16bpp;
+	asm(
+		"    xorl %%eax, %%eax                    \n\t"
+		"    xorl %%ebx, %%ebx                    \n\t"
+		".1:                                      \n\t"
+		"    movl 0(%%esi), %%eax                 \n\t"
+		"    movl 4(%%esi), %%ebx                 \n\t"
+		"    shrb $2, %%ah                        \n\t"
+		"    shrb $2, %%bh                        \n\t"
+
+		"    shrl $3, %%eax                       \n\t"
+		"    shrl $3, %%ebx                       \n\t"
+
+		"    shlw $5, %%ax                        \n\t"
+		"    shlw $5, %%bx                        \n\t"
+
+		"    shrl $5, %%eax                       \n\t"
+		"    shll $11, %%ebx                      \n\t"
+		"                                         \n\t"
+		"    addl $8, %%esi                       \n\t"
+		"    orl  %%ebx, %%eax                    \n\t"
+		"                                         \n\t"
+		"    movl %%eax, (%%edi)                  \n\t"
+		"    addl $4, %%edi                       \n\t"
+		
+		"    subl $1, %%ecx                       \n\t"
+		"    jnz  .1                              \n\t"
+	: /* no output */
+	: "S" (src), "D" (dst), "c" (width/2*height)
+	: "%eax", "%ebx", "memory"
+	);
+	return;
+
+#if 0
 	for (y=0; y < height; y++)
 		for (x=0; x < width; x++) {
-			B = *src++ >> 3;
+			/*B = *src++ >> 3;
 			G = *src++ >> 2;
 			R = *src++ >> 3;
 			src++;
 
 			*dst++ = (R << 11) | (G << 5) | B;
+			*/
+			B = *src++ >> 3;
+			G = (uint16_t)(*src++ & 0xfc) << 3;
+			R = (uint16_t)(*src++ & 0xf8) << 8;
+			src++;
+
+			*dst++ = R | G | B;
 		}
+#endif
 }
 
 
