@@ -1,3 +1,14 @@
+/*
+	$Date: 2007-07-04 22:12:31 $, $Revision: 1.2 $
+	
+	Simple direct-screen abstraction for X Window [header].
+	
+	Author: Wojciech Mu³a
+	e-mail: wojciech_mula@poczta.onet.pl
+	www:    http://www.mula.w.pl
+	
+	License: public domain
+*/
 #ifndef __XSCR_H_INCLUDED__
 #define __XSCR_H_INCLUDED__
 
@@ -115,8 +126,8 @@ void Xscr_discard_events();
 
 
 // Error messages
-#define Xscr_maxerror 7
-char* Xscr_errormsg[Xscr_maxerror] = {
+#define Xscr_maxerror 8
+static char* Xscr_errormsg[Xscr_maxerror] = {
 	/* 0 */ "no error",
 	/* 1 */ "cant't open display (is $DISPLAY set?)",
 	/* 2 */ "screen depth is different then required depth",
