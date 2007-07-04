@@ -130,6 +130,7 @@ int Xscr_mainloop(
 		Xscr_prepare_lookups();
 	}
 	else {
+		puts("dupa");
 		image = XCreateImage(display, DefaultVisual(display, screen),
 			depth, ZPixmap, 0, (char*)screen_data,
 			width, height, 8, 0);
@@ -493,7 +494,7 @@ void Xscr_convert_32bpp_16bpp(
 //#define TEST_XSCR
 #ifdef TEST_XSCR
 #include <stdio.h>
-#include "load_ppm.c"
+#include "load_ppm.h"
 
 void motion(
 	int x, int y, Time t,
