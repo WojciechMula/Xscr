@@ -1,70 +1,21 @@
-#include <X11/X.h>
-#include <X11/Xlib.h>
-#include <X11/Xutil.h>
-#include <X11/keysym.h>
-
+#include "Xscr.h"
 #include <stdlib.h>
-#include <stdint.h>
 
-#define true	1
-#define false	(!True)
+// global variables
+Display* display;
+Window   window;
 
-typedef enum {
-	DEPTH_15bpp = 15,
-	DEPTH_16bpp = 16,
-	DEPTH_32bpp = 24,
-	DEPTH_gray  = 8
-} BitsPerPixel;
-
-typedef enum {Pressed, Released} State;
-
-typedef void (*Xscr_motion_callback)(
-	int x,
-	int y,
-	Time time,
-	unsigned int kb_mask
-);
-
-typedef void (*Xscr_keyboard_callback)(
-	int x, int y, Time time,
-	KeySym c,
-	State s,
-	unsigned int kb_mask
-);
-
-typedef void (*Xscr_buttons_callback)(
-	int x, int y, Time time,
-	unsigned int button,
-	State s,
-	unsigned int kb_mask
-);
-
-static Bool quit   = False;
-static char redraw = True;
+static Bool running = False;
+static Bool quit;
+static char redraw;
 
 void Xscr_quit()       {quit = True;}
 void Xscr_redraw()     {redraw = 1;}
 void Xscr_redraw_now() {redraw = 2;}
+void Xscr_discard_events() {XSync(display, True);}
 
-char* Xscr_errormsg[] = {
-	/* 0 */ "no error",
-	/* 1 */ "cant't open display (is $DISPLAY set?)",
-	/* 2 */ "screen depth is different then required depth",
-	/* 3 */ "unsupported screen depth conversions",
-	/* 4 */ "not enought memory for backbuffer",
-	/* 5 */ "can't create Ximage",
-	/* 6 */ "",
-	/* 7 */ "",
-	/* 8 */ "",
-	/* 9 */ "",
-	/* 10 */ "",
-	/* 11 */ "",
-	/* 12 */ "",
-	/* 13 */ ""
-};
-
+// conversion routines
 void Xscr_prepare_lookups();
-
 void Xscr_convert_gray_32bpp(void*, void*, unsigned int, unsigned int);
 void Xscr_convert_gray_16bpp(void*, void*, unsigned int, unsigned int);
 void Xscr_convert_gray_15bpp(void*, void*, unsigned int, unsigned int);
@@ -77,8 +28,8 @@ int Xscr_mainloop(
 	unsigned int width,
 	unsigned int height,
 	BitsPerPixel screen_depth,
-	uint8_t* screen_data,
 	Bool require_exact_depth,
+	uint8_t* screen_data,
 
 	Xscr_keyboard_callback	keyboard_callback,
 	Xscr_motion_callback	motion_callback,
@@ -86,12 +37,9 @@ int Xscr_mainloop(
 	const char* app_name
 ) {
 	// X variables
-	Display* display;
-	Window   window;
 	int      screen;
 	GC       defaultGC;
 	XEvent	 event;
-
 
 	// priv variables
 	uint8_t* real_screen_data = NULL;
@@ -101,15 +49,25 @@ int Xscr_mainloop(
 	XWMHints   WM_hints;
 	void	   (*conv_func)(void*, void*, unsigned int, unsigned int) = NULL;
 
+	// 0. is Xscr_mainloop running 
+	if (running)
+		return -6;
+	else
+		running = True;
 	
-	// open display
+	// 1. is width is multiply of 32
+	if (width % 32)
+		return -7;
+	
+	// 2. open display
 	display = XOpenDisplay(NULL);
 	if (!display) return -1;
 
-	// get screen
+	// 3. get screen & depth
 	screen = DefaultScreen(display);
 	depth  = DefaultDepth(display, screen);
 
+	// 4. setup conversion routins if needed
 	if (depth != (int)screen_depth) {
 		if (require_exact_depth)
 			return -2;
@@ -179,7 +137,7 @@ int Xscr_mainloop(
 			return -5;
 		}
 
-	// create window
+	// 5. create window
 	window = XCreateSimpleWindow( // make a simple window
 		display, 
 		RootWindow(display, screen),
@@ -190,31 +148,35 @@ int Xscr_mainloop(
 		WhitePixel(display, screen)
 	);
 
+	// 6. set application name
 	if (app_name)
 		XStoreName(display, window, app_name);
 	else
 		XStoreName(display, window, "Xscr application");
 
+	// 7a. set hints
 	WM_hints.flags = InputHint | StateHint;
 	WM_hints.input = True;
 	WM_hints.initial_state = NormalState;
 	XSetWMHints(display, window, &WM_hints);
 
+	// 7b. set size hints (inhibit resizing)
 	size_hints.flags = PMinSize | PMaxSize | PSize;
 	size_hints.width = size_hints.min_width = size_hints.max_width = width;
 	size_hints.height = size_hints.min_height = size_hints.max_height = height;
 	XSetWMNormalHints(display, window, &size_hints);
 
 	
-	XMapWindow(display, window); // show window on the screen
-
-	// setup graphics context
+	// 8. setup graphics context
 	defaultGC = XCreateGC(display, window, 0, NULL);
 	XSetForeground(display, defaultGC, BlackPixel(display, screen) );
 	XSetBackground(display, defaultGC, WhitePixel(display, screen) );
-
 	
-	// start reading messages
+	// 9. shot window on the screen
+	XMapWindow(display, window);
+
+
+	// 10. decide what events we should read
 	long event_mask = ExposureMask;
 
 	if (motion_callback) 
@@ -230,7 +192,8 @@ int Xscr_mainloop(
 
 	XSelectInput(display, window, event_mask);
 
-	quit   = false;
+	// 11. start reading messages
+	quit   = False;
 	redraw = 1;
 
 	while (!quit) {
@@ -361,6 +324,8 @@ void Xscr_prepare_lookups() {
 	}
 }
 
+
+
 void Xscr_convert_gray_32bpp(
 	void *gray,
 	void *true_color,
@@ -457,19 +422,13 @@ void Xscr_convert_15bpp_32bpp(
 }
 
 
+#ifdef XSCR_X86conv
 void Xscr_convert_32bpp_16bpp(
 	void *pix32bpp,
 	void *pix16bpp,
 	unsigned int width,
 	unsigned int height
 ) {
-	int x, y;
-	uint8_t *src;
-	uint16_t  R, G, B;
-	uint16_t *dst;
-
-	src = pix32bpp;
-	dst = pix16bpp;
 	asm(
 		"    xorl %%eax, %%eax                    \n\t"
 		"    xorl %%ebx, %%ebx                    \n\t"
@@ -497,21 +456,28 @@ void Xscr_convert_32bpp_16bpp(
 		"    subl $1, %%ecx                       \n\t"
 		"    jnz  .1                              \n\t"
 	: /* no output */
-	: "S" (src), "D" (dst), "c" (width/2*height)
+	: "S" (pix32bpp), "D" (pix16bpp), "c" (width/2*height)
 	: "%eax", "%ebx", "memory"
 	);
 	return;
+}
+#else
+void Xscr_convert_32bpp_16bpp(
+	void *pix32bpp,
+	void *pix16bpp,
+	unsigned int width,
+	unsigned int height
+) {
+	int x, y;
+	uint8_t *src;
+	uint16_t  R, G, B;
+	uint16_t *dst;
 
-#if 0
+	src = pix32bpp;
+	dst = pix16bpp;
+
 	for (y=0; y < height; y++)
 		for (x=0; x < width; x++) {
-			/*B = *src++ >> 3;
-			G = *src++ >> 2;
-			R = *src++ >> 3;
-			src++;
-
-			*dst++ = (R << 11) | (G << 5) | B;
-			*/
 			B = *src++ >> 3;
 			G = (uint16_t)(*src++ & 0xfc) << 3;
 			R = (uint16_t)(*src++ & 0xf8) << 8;
@@ -519,9 +485,8 @@ void Xscr_convert_32bpp_16bpp(
 
 			*dst++ = R | G | B;
 		}
-#endif
 }
-
+#endif
 
 ////////////////////////////////////////////////////////////////////////
 
@@ -530,17 +495,36 @@ void Xscr_convert_32bpp_16bpp(
 #include <stdio.h>
 #include "load_ppm.c"
 
-void motion(int x, int y, Time t, unsigned int kb_mask) {
+void motion(
+	int x, int y, Time t,
+	unsigned int kb_mask
+) {
 	printf("mouse position: %d, %d\n", x, y);
 }
 
-void buttons(int x, int y, Time t, unsigned int button, State s, unsigned int kb_mask) {
-	printf("state=%s, button=%d\n", s==Pressed ? "Pressed" : "Released", button);
+void buttons(
+	int x, int y, Time t,
+	unsigned int button, 
+	KeyOrButtonState s,
+	unsigned int kb_mask
+) {
+	printf("state=%s, button=%d\n",
+	        s==Pressed ? "Pressed" : "Released",
+	        button
+	);
 }
 
-void keyboard(int x, int y, Time t, KeySym c, State s, unsigned int state) {
-	printf("state=%s, key=%s\n", s==Pressed ? "Pressed" : "Released", XKeysymToString(c));
-	if (c == XK_q)
+void keyboard(
+	int x, int y, Time t,
+	KeySym c,
+	KeyOrButtonState s,
+	unsigned int state
+) {
+	printf("state=%s, key=%s\n",
+	       s==Pressed ? "Pressed" : "Released",
+	       XKeysymToString(c)
+	);
+	if (c == XK_q || c == XK_Q)
 		Xscr_quit();
 }
 
@@ -560,7 +544,7 @@ int main() {
 	}
 
 	result = Xscr_mainloop(
-		640, 480, DEPTH_32bpp, data, False, 
+		640, 480, DEPTH_32bpp, False, data, 
 		keyboard, motion, buttons,
 		"Xscr demo"
 	);
