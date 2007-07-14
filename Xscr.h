@@ -1,5 +1,5 @@
 /*
-	$Date: 2007-07-04 22:12:31 $, $Revision: 1.2 $
+	$Date: 2007-07-14 17:13:55 $, $Revision: 1.3 $
 	
 	Simple direct-screen abstraction for X Window [header].
 	
@@ -65,7 +65,7 @@ typedef void (*Xscr_buttons_callback)(
 // Public functions
 
 // Function runs main loop, that process some events send by server.
-// If user pass callbacks (keybord, motion, buttons -- not all are
+// If user pass callbacks (keyboard, motion, buttons -- not all are
 // required) then events are dispatched to them.
 //
 // Only one Xscr_mainloop may run within a program.
@@ -80,7 +80,7 @@ typedef void (*Xscr_buttons_callback)(
 //                    error is reported
 //    screen_data   - screen data defined (and later modified) by user
 //
-//    Note: callbacks are not mendatory, pass NULL if you don't
+//    Note: callbacks are not mandatory, pass NULL if you don't
 //          need certain callback
 //
 //    keyboard_callback - callback called on key events
@@ -92,7 +92,7 @@ typedef void (*Xscr_buttons_callback)(
 //               is used
 //
 // Result:
-//    equal 0      - succes
+//    equal 0      - success
 //    less then 0  - error, use -result to get error message
 //                   from Xscr_errormsg array
 int Xscr_mainloop(
@@ -129,10 +129,10 @@ void Xscr_discard_events();
 #define Xscr_maxerror 8
 static char* Xscr_errormsg[Xscr_maxerror] = {
 	/* 0 */ "no error",
-	/* 1 */ "cant't open display (is $DISPLAY set?)",
+	/* 1 */ "can't open display (is $DISPLAY set?)",
 	/* 2 */ "screen depth is different then required depth",
 	/* 3 */ "unsupported screen depth conversions",
-	/* 4 */ "not enought memory for backbuffer",
+	/* 4 */ "not enough memory for backbuffer",
 	/* 5 */ "can't create Ximage",
 	/* 6 */ "Xscr_mainloop is already running",
 	/* 7 */ "width isn't multiply of 32",
