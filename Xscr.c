@@ -1,5 +1,5 @@
 /*
-	$Date: 2007-07-04 22:12:09 $, $Revision: 1.7 $
+	$Date: 2008-06-08 12:52:52 $, $Revision: 1.8 $
 	
 	Simple direct-screen abstraction for X Window [implementation].
 	Usage demo included (compile with -DTEST_XSCR).
@@ -69,8 +69,21 @@ int Xscr_mainloop(
 		running = True;
 	
 	// 1. is width is multiply of 32
-	if (width % 32)
-		return -7;
+	switch (screen_depth) {
+		case 24:
+			if ((width*4) % 32)
+				return -7;
+			break;
+		case 15:
+		case 16:
+			if ((width*2) % 32)
+				return -7;
+			break;
+		case 8:
+			if (width % 32)
+				return -7;
+			break;
+	}
 	
 	// 2. open display
 	display = XOpenDisplay(NULL);
