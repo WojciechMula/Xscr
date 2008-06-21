@@ -1,12 +1,12 @@
 /*
-	$Date: 2008-06-08 12:52:52 $, $Revision: 1.8 $
+	$Date: 2008-06-21 18:27:04 $, $Revision: 1.9 $
 	
 	Simple direct-screen abstraction for X Window [implementation].
 	Usage demo included (compile with -DTEST_XSCR).
 	
 	Author: Wojciech Mu³a
 	e-mail: wojciech_mula@poczta.onet.pl
-	www:    http://www.mula.w.pl
+	www:    http://www.republika.pl/wmula/
 	
 	License: public domain
 */

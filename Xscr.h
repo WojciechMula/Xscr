@@ -1,11 +1,11 @@
 /*
-	$Date: 2007-07-14 17:13:55 $, $Revision: 1.3 $
+	$Date: 2008-06-21 18:27:18 $, $Revision: 1.4 $
 	
 	Simple direct-screen abstraction for X Window [header].
 	
 	Author: Wojciech Mu³a
 	e-mail: wojciech_mula@poczta.onet.pl
-	www:    http://www.mula.w.pl
+	www:    http://www.republika.pl/wmula/
 	
 	License: public domain
 */
