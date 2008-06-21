@@ -1,5 +1,5 @@
 /*
-	$Date: 2008-06-21 18:27:18 $, $Revision: 1.4 $
+	$Date: 2008-06-21 22:36:18 $, $Revision: 1.5 $
 	
 	Simple direct-screen abstraction for X Window [header].
 	
@@ -127,7 +127,7 @@ void Xscr_discard_events();
 
 // Error messages
 #define Xscr_maxerror 8
-static char* Xscr_errormsg[Xscr_maxerror] = {
+static char* Xscr_errormsg[Xscr_maxerror] __attribute__((unused)) = {
 	/* 0 */ "no error",
 	/* 1 */ "can't open display (is $DISPLAY set?)",
 	/* 2 */ "screen depth is different then required depth",
