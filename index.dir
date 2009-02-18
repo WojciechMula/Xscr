@@ -1,0 +1,3 @@
+rest:	header.txt
+copy:	Xscr.?
+copy:	.htaccess
