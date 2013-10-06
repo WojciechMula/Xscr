@@ -1,12 +1,12 @@
 /*
 	$Date: 2008-06-21 18:27:04 $, $Revision: 1.9 $
-	
+
 	Simple direct-screen abstraction for X Window [implementation].
-	
-	Author: Wojciech Mu³a
+
+	Author: Wojciech MuÅ‚a
 	e-mail: wojciech_mula@poczta.onet.pl
 	www:    http://0x80.pl/
-	
+
 	License: public domain
 */
 
@@ -36,6 +36,18 @@ void Xscr_convert_15bpp_32bpp(void*, void*, unsigned int, unsigned int);
 void Xscr_convert_32bpp_16bpp(void*, void*, unsigned int, unsigned int);
 
 
+enum {
+	NO_ERROR				= 0,
+	CANT_OPEN_DISPLAY		= 1,
+	DEPTHS_MISMATCH			= 2,
+	UNSUPPORTED_CONVERSION 	= 3,
+	OUT_OF_MEMORY			= 4,
+	XIMAGE_CREATION_ERROR	= 5,
+	XSCR_MAIN_LOOP_RUNNING	= 6,
+	INVALID_IMAGE_WIDTH		= 7
+};
+
+
 int Xscr_mainloop(
 	unsigned int width,
 	unsigned int height,
@@ -61,32 +73,32 @@ int Xscr_mainloop(
 	XWMHints   WM_hints;
 	void	   (*conv_func)(void*, void*, unsigned int, unsigned int) = NULL;
 
-	// 0. is Xscr_mainloop running 
+	// 0. is Xscr_mainloop running
 	if (running)
-		return -6;
+		return XSCR_MAIN_LOOP_RUNNING;
 	else
 		running = True;
-	
+
 	// 1. is width is multiply of 32
 	switch (screen_depth) {
 		case 24:
 			if ((width*4) % 32)
-				return -7;
+				return INVALID_IMAGE_WIDTH;
 			break;
 		case 15:
 		case 16:
 			if ((width*2) % 32)
-				return -7;
+				return INVALID_IMAGE_WIDTH;
 			break;
 		case 8:
 			if (width % 32)
-				return -7;
+				return INVALID_IMAGE_WIDTH;
 			break;
 	}
-	
+
 	// 2. open display
 	display = XOpenDisplay(NULL);
-	if (!display) return -1;
+	if (!display) return CANT_OPEN_DISPLAY;
 
 	// 3. get screen & depth
 	screen = DefaultScreen(display);
@@ -95,7 +107,7 @@ int Xscr_mainloop(
 	// 4. setup conversion routins if needed
 	if (depth != (int)screen_depth) {
 		if (require_exact_depth)
-			return -2;
+			return DEPTHS_MISMATCH;
 
 		// select conversion function
 		switch ((int)screen_depth) {
@@ -104,33 +116,33 @@ int Xscr_mainloop(
 					case 24: conv_func = Xscr_convert_gray_32bpp; break;
 					case 16: conv_func = Xscr_convert_gray_16bpp; break;
 					case 15: conv_func = Xscr_convert_gray_15bpp; break;
-					default: return -3;
+					default: return UNSUPPORTED_CONVERSION;
 				}
 				break;
 
 			case 16:
 				switch (depth) {
 					case 24: conv_func = Xscr_convert_16bpp_32bpp; break;
-					default: return -3;
+					default: return UNSUPPORTED_CONVERSION;
 				}
 				break;
 
 			case 15:
 				switch (depth) {
 					case 24: conv_func = Xscr_convert_15bpp_32bpp; break;
-					default: return -3;
+					default: return UNSUPPORTED_CONVERSION;
 				}
 				break;
 
 			case 24:
 				switch (depth) {
 					case 16: conv_func = Xscr_convert_32bpp_16bpp; break;
-					default: return -3;
+					default: return UNSUPPORTED_CONVERSION;
 				}
 				break;
 
 			default:
-				return -3;
+				return UNSUPPORTED_CONVERSION;
 		}
 
 		// allocate mem for backbuffer
@@ -147,11 +159,11 @@ int Xscr_mainloop(
 				break;
 		}
 
-		if (real_screen_data == NULL) return -4;
+		if (real_screen_data == NULL) return OUT_OF_MEMORY;
 		image = XCreateImage(display, DefaultVisual(display, screen),
 			depth, ZPixmap, 0, (char*)real_screen_data,
 			width, height, 8, 0);
-	
+
 		Xscr_prepare_lookups();
 	}
 	else {
@@ -159,12 +171,12 @@ int Xscr_mainloop(
 			depth, ZPixmap, 0, (char*)screen_data,
 			width, height, 8, 0);
 		if (image == NULL)
-			return -5;
+			return XIMAGE_CREATION_ERROR;
 		}
 
 	// 5. create window
 	window = XCreateSimpleWindow( // make a simple window
-		display, 
+		display,
 		RootWindow(display, screen),
 		0, 0,
 		width, height,
@@ -191,12 +203,12 @@ int Xscr_mainloop(
 	size_hints.height = size_hints.min_height = size_hints.max_height = height;
 	XSetWMNormalHints(display, window, &size_hints);
 
-	
+
 	// 8. setup graphics context
 	defaultGC = XCreateGC(display, window, 0, NULL);
 	XSetForeground(display, defaultGC, BlackPixel(display, screen) );
 	XSetBackground(display, defaultGC, WhitePixel(display, screen) );
-	
+
 	// 9. shot window on the screen
 	XMapWindow(display, window);
 
@@ -204,7 +216,7 @@ int Xscr_mainloop(
 	// 10. decide what events we should read
 	long event_mask = ExposureMask;
 
-	if (motion_callback) 
+	if (motion_callback)
 		event_mask |= PointerMotionMask;
 	if (keyboard_callback) {
 		event_mask |= KeyPressMask;
@@ -225,12 +237,12 @@ int Xscr_mainloop(
 		if (redraw) {
 			if (conv_func)
 				(*conv_func)((void*)screen_data, (void*)real_screen_data, width, height);
-			
+
 			XPutImage(display, window, defaultGC, image, 0, 0, 0, 0, width, height);
-			
+
 			if (redraw == 2)
 				XFlush(display);
-			
+
 			redraw = 0;
 		}
 
@@ -301,7 +313,40 @@ int Xscr_mainloop(
 	if (real_screen_data != NULL) {
 		free(real_screen_data);
 	}
-	return 0;
+
+	return NO_ERROR;
+}
+
+
+char* Xscr_error_str(int error_code) {
+	switch (error_code) {
+		case NO_ERROR:
+			return "no error";
+
+		case CANT_OPEN_DISPLAY:
+			return "can't open display (is $DISPLAY set?)";
+
+		case DEPTHS_MISMATCH:
+			return "screen depth is different then required depth";
+
+		case UNSUPPORTED_CONVERSION:
+			return "unsupported screen depth conversions";
+
+		case OUT_OF_MEMORY:
+			return "not enough memory for backbuffer";
+
+		case XIMAGE_CREATION_ERROR:
+			return "can't create Ximage";
+
+		case XSCR_MAIN_LOOP_RUNNING:
+			return "Xscr_mainloop is alread y running";
+
+		case INVALID_IMAGE_WIDTH:
+			return "width isn't multiply of 32";
+
+		defult:
+			return "unknown error";
+	}
 }
 
 
@@ -328,22 +373,22 @@ void Xscr_prepare_lookups() {
 
 		// 16bpp -> 32bpp
 		// |rrrrrggg gggbbbbb|
-		
+
 		// |00000000 00000000 000ggg00 bbbbb000|
 		__conv_16bpp_32bpp_lo[i] = ((i & 0xe0) << 5) | ((i & 0x1f) << 3);
-		
+
 		// |00000000 rrrrr000 ggg00000 00000000|
 		__conv_16bpp_32bpp_hi[i] = ((i & 0x07) << 13) | ((i & 0xf8) << 16);
-		
-		
+
+
 		// 15bpp -> 32bpp
 		// |0rrrrrgg gggbbbbb|
 		//
 		// |00000000 rrrrr000 ggggg000 bbbbb000|
-		
+
 		// |00000000 00000000 000gg000 bbbbb000|
 		__conv_15bpp_32bpp_lo[i] = ((i & 0xe0) << 5) | ((i & 0x1f) << 3);
-		
+
 		// |00000000 rrrrr000 ggg00000 00000000|
 		__conv_15bpp_32bpp_hi[i] = ((i & 0x07) << 13) | ((i & 0x78) << 17);
 	}
@@ -477,7 +522,7 @@ void Xscr_convert_32bpp_16bpp(
 		"                                         \n\t"
 		"    movl %%eax, (%%edi)                  \n\t"
 		"    addl $4, %%edi                       \n\t"
-		
+
 		"    subl $1, %%ecx                       \n\t"
 		"    jnz  .1                              \n\t"
 	: /* no output */

@@ -1,12 +1,12 @@
 /*
 	$Date: 2008-06-21 22:36:18 $, $Revision: 1.5 $
-	
+
 	Simple direct-screen abstraction for X Window [header].
-	
+
 	Author: Wojciech Mu³a
 	e-mail: wojciech_mula@poczta.onet.pl
 	www:    http://0x80.pl
-	
+
 	License: public domain
 */
 #ifndef __XSCR_H_INCLUDED__
@@ -69,7 +69,7 @@ typedef void (*Xscr_buttons_callback)(
 // required) then events are dispatched to them.
 //
 // Only one Xscr_mainloop may run within a program.
-// 
+//
 // Parameters:
 //    width, height - dimension of virtual screen
 //                    width MUST be multiply of 32
@@ -93,8 +93,7 @@ typedef void (*Xscr_buttons_callback)(
 //
 // Result:
 //    equal 0      - success
-//    less then 0  - error, use -result to get error message
-//                   from Xscr_errormsg array
+//    other then 0 - error, use Xscr_errormsg to get description
 int Xscr_mainloop(
 	unsigned int width,
 	unsigned int height,
@@ -107,6 +106,8 @@ int Xscr_mainloop(
 	Xscr_buttons_callback	buttons_callback,
 	const char* app_name
 );
+
+char* Xscr_error_str(int error_code);
 
 // These function should be called inside callbacks
 
@@ -124,19 +125,6 @@ void Xscr_redraw_now();
 // Remove all events from X11 event queue.
 void Xscr_discard_events();
 
-
-// Error messages
-#define Xscr_maxerror 8
-static char* Xscr_errormsg[Xscr_maxerror] __attribute__((unused)) = {
-	/* 0 */ "no error",
-	/* 1 */ "can't open display (is $DISPLAY set?)",
-	/* 2 */ "screen depth is different then required depth",
-	/* 3 */ "unsupported screen depth conversions",
-	/* 4 */ "not enough memory for backbuffer",
-	/* 5 */ "can't create Ximage",
-	/* 6 */ "Xscr_mainloop is already running",
-	/* 7 */ "width isn't multiply of 32",
-};
 
 // vim: ts=4 sw=4 nowrap noexpandtab
 #endif

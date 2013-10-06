@@ -1,5 +1,13 @@
+/*
+ 	Compilation:
+
+	$ gcc -O2 Xscr.c demo.c -lX11 -o demo
+
+*/
+
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include "Xscr.h"
 
 void motion(
@@ -11,7 +19,7 @@ void motion(
 
 void buttons(
 	int x, int y, Time t,
-	unsigned int button, 
+	unsigned int button,
 	KeyOrButtonState s,
 	unsigned int kb_mask
 ) {
@@ -37,8 +45,11 @@ void keyboard(
 
 int main(int argc, char* argv[]) {
 	int result;
-	
-	int width, height, x, y;
+
+	int screen_width = 640;
+	int screen_height = 480;
+
+	int img_width, img_height, x, y;
 	uint8_t *data;
 	uint8_t *img_row;
 	uint8_t *src, *dst;
@@ -49,32 +60,36 @@ int main(int argc, char* argv[]) {
 		return 1;
 	}
 
-	width  = atoi(argv[1]);
-	if (width % 32) {
-		printf("Image width must be multiply of 32\n");
-		return 1;
-	}
-	height = atoi(argv[2]);
+	img_width = atoi(argv[1]);
+	img_height = atoi(argv[2]);
+
 	file = fopen(argv[3], "rb");
 	if (!file) {
 		printf("Can't open '%s'\n", argv[4]);
 		return 1;
 	}
-	data    = (uint8_t*)malloc(width*height*4);
-	img_row = (uint8_t*)malloc(width*3);
+	data    = (uint8_t*)malloc(screen_width * screen_height * 4);
+	img_row = (uint8_t*)malloc(img_width * 3);
 	if (!data || !img_row) {
 		printf("Not enough memory\n");
 		return 1;
 	}
 
-	fseek(file, -width*height*3, SEEK_END);
+	// load file
+	memset(data, 0x333333, screen_width * screen_height * 4);
 
-	dst = data;
-	for (y=0; y < height; y++) {
-		if (y == 0)
-		fread(img_row, width, 3, file);
+	int H = (img_height < screen_height) ? img_height : screen_height;
+	int W = (img_width < screen_width) ? img_width : screen_width;
+
+	fseek(file, -img_width * img_height * 3, SEEK_END);
+	for (y=0; y < H; y++) {
+		fread(img_row, img_width, 3, file);
+		if (feof(file))
+			break;
+
 		src = img_row;
-		for (x=0; x < width; x++) {
+		dst = &data[y * screen_width * 4];
+		for (x=0; x < W; x++) {
 			*dst++ = *(src+2);
 			*dst++ = *(src+1);
 			*dst++ = *(src+0);
@@ -84,18 +99,20 @@ int main(int argc, char* argv[]) {
 	}
 
 	fclose(file);
-		
+
 
 	// run mainloop
 	result = Xscr_mainloop(
-		640, 480, DEPTH_32bpp, False, data, 
+		screen_width,
+		screen_height,
+		DEPTH_32bpp, False, data,
 		keyboard, motion, buttons,
 		"Xscr demo"
 	);
 
 	// check exit status
-	if (result < 0) {
-		printf("Xscr error: %s\n", Xscr_errormsg[-result]);
+	if (result) {
+		printf("Xscr error: %s\n", Xscr_error_str(result));
 	}
 
 	free(data);
