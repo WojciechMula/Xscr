@@ -1,5 +1,0 @@
-HeaderName	header.html
-IndexIgnore	header.html
-IndexOptions	DescriptionWidth=*
-AddDescription	"implementation"	Xscr.c
-AddDescription	"header"		Xscr.h
