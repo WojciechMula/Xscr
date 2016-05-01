@@ -60,8 +60,8 @@ int main(int argc, char* argv[]) {
 		return 1;
 	}
 
-	img_width = atoi(argv[1]);
-	img_height = atoi(argv[2]);
+	img_width  = screen_width  = atoi(argv[1]);
+	img_height = screen_height = atoi(argv[2]);
 
 	file = fopen(argv[3], "rb");
 	if (!file) {
