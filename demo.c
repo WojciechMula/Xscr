@@ -65,7 +65,7 @@ int main(int argc, char* argv[]) {
 
 	file = fopen(argv[3], "rb");
 	if (!file) {
-		printf("Can't open '%s'\n", argv[4]);
+		printf("Can't open '%s'\n", argv[3]);
 		return 1;
 	}
 	data    = (uint8_t*)malloc(screen_width * screen_height * 4);

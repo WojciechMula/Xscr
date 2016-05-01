@@ -64,6 +64,8 @@ int Xscr_mainloop(
 	int      screen;
 	GC       defaultGC;
 	XEvent	 event;
+	KeySym*  key_symbol;
+	int	     ret;
 
 	// priv variables
 	uint8_t* real_screen_data = NULL;
@@ -203,15 +205,13 @@ int Xscr_mainloop(
 	size_hints.height = size_hints.min_height = size_hints.max_height = height;
 	XSetWMNormalHints(display, window, &size_hints);
 
-
 	// 8. setup graphics context
 	defaultGC = XCreateGC(display, window, 0, NULL);
 	XSetForeground(display, defaultGC, BlackPixel(display, screen) );
 	XSetBackground(display, defaultGC, WhitePixel(display, screen) );
 
-	// 9. shot window on the screen
+	// 9. show window on the screen
 	XMapWindow(display, window);
-
 
 	// 10. decide what events we should read
 	long event_mask = ExposureMask;
@@ -264,24 +264,28 @@ int Xscr_mainloop(
 				);
 				break;
 			case KeyPress:
+                key_symbol = XGetKeyboardMapping(display, event.xkey.keycode, 1, &ret);
 				keyboard_callback(
 					event.xkey.x,
 					event.xkey.y,
 					event.xkey.time,
-					XKeycodeToKeysym(display, event.xkey.keycode, 0),
+					key_symbol[0],
 					Pressed,
 					event.xkey.state
 				);
+				XFree(key_symbol);
 				break;
 			case KeyRelease:
+                key_symbol = XGetKeyboardMapping(display, event.xkey.keycode, 1, &ret);
 				keyboard_callback(
 					event.xkey.x,
 					event.xkey.y,
 					event.xkey.time,
-					XKeycodeToKeysym(display, event.xkey.keycode, 0),
+					key_symbol[0],
 					Released,
 					event.xkey.state
 				);
+				XFree(key_symbol);
 				break;
 			case ButtonPress:
 				buttons_callback(
@@ -344,7 +348,7 @@ char* Xscr_error_str(int error_code) {
 		case INVALID_IMAGE_WIDTH:
 			return "width isn't multiply of 32";
 
-		defult:
+		default:
 			return "unknown error";
 	}
 }
@@ -402,7 +406,7 @@ void Xscr_convert_gray_32bpp(
 	unsigned int width,
 	unsigned int height
 ) {
-	int x, y;
+	unsigned int x, y;
 	uint8_t  *src;
 	uint32_t *dst;
 
@@ -420,7 +424,7 @@ void Xscr_convert_gray_16bpp(
 	unsigned int width,
 	unsigned int height
 ) {
-	int x, y;
+	unsigned int x, y;
 	uint8_t  *src;
 	uint16_t *dst;
 
@@ -438,7 +442,7 @@ void Xscr_convert_gray_15bpp(
 	unsigned int width,
 	unsigned int height
 ) {
-	int x, y;
+	unsigned int x, y;
 	uint8_t  *src;
 	uint16_t *dst;
 
@@ -477,7 +481,7 @@ void Xscr_convert_15bpp_32bpp(
 	unsigned int width,
 	unsigned int height
 ) {
-	int x, y;
+	unsigned int x, y;
 	uint16_t  *src;
 	uint32_t *dst;
 
@@ -538,7 +542,7 @@ void Xscr_convert_32bpp_16bpp(
 	unsigned int width,
 	unsigned int height
 ) {
-	int x, y;
+	unsigned int x, y;
 	uint8_t *src;
 	uint16_t  R, G, B;
 	uint16_t *dst;
