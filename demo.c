@@ -19,8 +19,8 @@ void motion(
 
 void buttons(
 	int x, int y, Time t,
-	unsigned int button,
 	KeyOrButtonState s,
+	unsigned int button,
 	unsigned int kb_mask
 ) {
 	printf("state=%s, button=%d\n",
